@@ -1,0 +1,120 @@
+/* Design tokens + base — Mercury-ish warm cream, refined */
+:root {
+  /* Surfaces */
+  --bg:        #f6f4ed;
+  --panel:     #ffffff;
+  --soft:      #efebde;
+  --softer:    #f2eee0;
+  --inset:     #ebe7d8;
+
+  /* Ink */
+  --ink:       #14130f;
+  --ink-2:     #2e2b22;
+  --ink-3:     #4a463b;
+  --mute:      #71695a;
+  --faint:     #a59d89;
+
+  /* Hairlines */
+  --hair:      #e3decd;
+  --hair-2:    #d0c9b3;
+  --hair-3:    #b9b196;
+
+  /* Source colors */
+  --google:    #2f63b8;
+  --google-bg: #eaf0fb;
+  --apple:    #b75487;
+  --apple-bg: #faedf2;
+  --outlook:   #1d7591;
+  --outlook-bg:#e6f1f4;
+  --manual:    #2e2b22;
+  --manual-bg: #efebde;
+
+  /* Semantic */
+  --accent:    #c0772c;    /* clay — "important / now" */
+  --accent-2:  #e09a4b;
+  --accent-bg: #faecd6;
+  --success:   #5a7e58;
+  --success-bg:#e8efe4;
+  --conflict:  #b14a3c;
+  --conflict-bg:#faeae5;
+
+  /* Type */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Patterns */
+  --hatch-protected: repeating-linear-gradient(135deg, rgba(29,117,145,0.10) 0 6px, transparent 6px 12px);
+  --hatch-conflict:  repeating-linear-gradient(135deg, rgba(177,74,60,0.10) 0 6px, transparent 6px 12px);
+
+  /* Radii */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+
+  /* Shadows */
+  --shadow-card: 0 1px 0 rgba(20,19,15,0.04), 0 1px 2px rgba(20,19,15,0.04);
+  --shadow-pop:  0 6px 24px rgba(20,19,15,0.10), 0 2px 6px rgba(20,19,15,0.06);
+}
+
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+body { font-family: var(--font-sans); font-feature-settings: 'cv11', 'ss01'; }
+*, *::before, *::after { box-sizing: border-box; }
+button { font-family: inherit; }
+
+.mono { font-family: var(--font-mono); font-feature-settings: 'zero', 'ss01'; }
+.smcaps { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; color: var(--mute); }
+
+/* Generic scrollable area */
+.scroll { overflow: auto; }
+.scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--hair-2); border-radius: 99px; border: 2px solid var(--bg); }
+.scroll::-webkit-scrollbar-thumb:hover { background: var(--hair-3); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; font-size: 12px; font-weight: 500;
+  padding: 6px 10px;
+  border: 1px solid var(--hair-2); border-radius: var(--r-md);
+  background: var(--panel); color: var(--ink);
+  cursor: pointer; line-height: 1;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+.btn:hover { background: var(--softer); border-color: var(--hair-3); }
+.btn.sm { font-size: 11px; padding: 4px 8px; gap: 4px; border-radius: var(--r-sm); }
+.btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+.btn.primary:hover { background: var(--ink-2); }
+.btn.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.accent:hover { background: var(--accent-2); border-color: var(--accent-2); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--mute); }
+.btn.ghost:hover { color: var(--ink); background: var(--softer); }
+
+/* Segmented control */
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--inset);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-md);
+}
+.seg > button {
+  font-family: inherit; font-size: 11px; font-weight: 500;
+  padding: 4px 10px; border: 0; border-radius: 4px;
+  background: transparent; color: var(--mute); cursor: pointer; line-height: 1;
+}
+.seg > button.on {
+  background: var(--panel); color: var(--ink);
+  box-shadow: 0 1px 0 rgba(20,19,15,0.05), 0 1px 2px rgba(20,19,15,0.06);
+}
+
+/* Tiny dot */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 99px; }
+
+/* Card */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
