@@ -1,50 +1,14 @@
-// Google Calendar integration — OAuth (implicit flow) + read-only event fetch.
+// Google Calendar fetcher — given an access token + a center date,
+// returns today's events + a 3-day window (yesterday/today/tomorrow relative
+// to the center).
 import React from 'react';
-import { useGoogleLogin, googleLogout } from '@react-oauth/google';
 
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 const CAL_BASE = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
-const TOKEN_KEY = 'kevin-todo:gtoken';
 
-function loadToken() {
-  try {
-    const raw = localStorage.getItem(TOKEN_KEY);
-    if (!raw) return null;
-    const t = JSON.parse(raw);
-    if (t.expiresAt < Date.now() + 60_000) return null;
-    return t;
-  } catch {
-    return null;
-  }
-}
-
-export function useGoogleAuth() {
-  const [token, setToken] = React.useState(loadToken);
-
-  const login = useGoogleLogin({
-    scope: SCOPE,
-    onSuccess: (resp) => {
-      const t = {
-        access_token: resp.access_token,
-        expiresAt: Date.now() + (resp.expires_in - 60) * 1000,
-      };
-      localStorage.setItem(TOKEN_KEY, JSON.stringify(t));
-      setToken(t);
-    },
-    onError: (err) => {
-      console.error('Google sign-in failed', err);
-      alert(`Google sign-in failed: ${err?.error || 'unknown error'}`);
-    },
-  });
-
-  const logout = () => {
-    googleLogout();
-    localStorage.removeItem(TOKEN_KEY);
-    setToken(null);
-  };
-
-  return { token: token?.access_token || null, signedIn: !!token, login, logout };
-}
+const DAY_NAMES_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function mapGoogleEvent(ge) {
   const start = new Date(ge.start.dateTime || ge.start.date);
@@ -64,47 +28,60 @@ function mapGoogleEvent(ge) {
   };
 }
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const FULL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+export function buildDateLabels(centerDate) {
+  const d = new Date(centerDate);
+  d.setHours(0, 0, 0, 0);
+  const yesterday = new Date(d); yesterday.setDate(yesterday.getDate() - 1);
+  const tomorrow = new Date(d); tomorrow.setDate(tomorrow.getDate() + 1);
 
-export function useGoogleCalendar(token) {
+  const days = [yesterday, d, tomorrow].map((day, i) => ({
+    day: day.getDate(),
+    label: `${DAY_NAMES_SHORT[day.getDay()]} · ${MONTHS_SHORT[day.getMonth()]} ${day.getDate()}`,
+    current: i === 1,
+  }));
+
+  const dateHeader = {
+    weekday: DAY_NAMES_LONG[d.getDay()],
+    date: `${MONTHS_LONG[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`,
+  };
+
+  return { days, dateHeader };
+}
+
+export function useGoogleCalendar(token, centerDate) {
   const [state, setState] = React.useState({
     today: [],
     week: {},
-    days: [],
-    dateHeader: { weekday: '', date: '' },
     loading: false,
     error: null,
   });
 
+  const centerMs = centerDate.getTime();
+
   React.useEffect(() => {
     if (!token) {
-      setState((s) => ({ ...s, today: [], week: {}, error: null }));
+      setState({ today: [], week: {}, loading: false, error: null });
       return;
     }
 
     let cancelled = false;
     setState((s) => ({ ...s, loading: true, error: null }));
 
-    const now = new Date();
-    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
-    const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    const tomorrowEnd = new Date(todayEnd); tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+    const center = new Date(centerMs); center.setHours(0, 0, 0, 0);
+    const dayStart = center;
+    const dayEnd = new Date(center); dayEnd.setHours(23, 59, 59, 999);
+    const rangeStart = new Date(dayStart); rangeStart.setDate(rangeStart.getDate() - 1);
+    const rangeEnd = new Date(dayEnd); rangeEnd.setDate(rangeEnd.getDate() + 1);
 
     const params = new URLSearchParams({
-      timeMin: yesterdayStart.toISOString(),
-      timeMax: tomorrowEnd.toISOString(),
+      timeMin: rangeStart.toISOString(),
+      timeMax: rangeEnd.toISOString(),
       singleEvents: 'true',
       orderBy: 'startTime',
       maxResults: '100',
     });
 
-    fetch(`${CAL_BASE}?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(`${CAL_BASE}?${params}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(async (r) => {
         if (!r.ok) {
           const body = await r.text();
@@ -119,7 +96,7 @@ export function useGoogleCalendar(token) {
           .map(mapGoogleEvent)
           .filter((e) => !e.allDay);
 
-        const today = all.filter((e) => e.start >= todayStart && e.start <= todayEnd);
+        const today = all.filter((e) => e.start >= dayStart && e.start <= dayEnd);
 
         const week = {};
         for (const e of all) {
@@ -127,31 +104,18 @@ export function useGoogleCalendar(token) {
           (week[d] = week[d] || []).push(e);
         }
 
-        const yesterday = new Date(todayStart); yesterday.setDate(yesterday.getDate() - 1);
-        const tomorrow = new Date(todayStart); tomorrow.setDate(tomorrow.getDate() + 1);
-        const days = [yesterday, todayStart, tomorrow].map((d, i) => ({
-          day: d.getDate(),
-          label: `${SHORT_DAYS[d.getDay()]} · ${MONTHS[d.getMonth()]} ${d.getDate()}`,
-          current: i === 1,
-        }));
-
-        const dateHeader = {
-          weekday: DAY_NAMES[now.getDay()],
-          date: `${FULL_MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`,
-        };
-
-        setState({ today, week, days, dateHeader, loading: false, error: null });
+        setState({ today, week, loading: false, error: null });
       })
       .catch((err) => {
         if (cancelled) return;
         console.error('Calendar fetch failed', err);
-        setState((s) => ({ ...s, loading: false, error: err.message }));
+        setState({ today: [], week: {}, loading: false, error: err.message });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, centerMs]);
 
   return state;
 }

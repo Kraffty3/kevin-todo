@@ -1,10 +1,14 @@
 // Connections panel — slide-in panel showing the 3 integrations and
-// their connection state. Any/all combination is valid.
+// their real connection state.
+//   - Google: real OAuth via auth.login() / auth.logout()
+//   - Apple / Outlook: not implemented yet, shown as "coming later"
 import React from 'react';
 import { INTEGRATIONS, SRC_META } from '../data.js';
 import { IntegrationMark } from './Shared.jsx';
 
-export function ConnectionsPanel({ open, connected, onToggle, onClose }) {
+const AVAILABLE = new Set(['google']);
+
+export function ConnectionsPanel({ open, auth, onClose }) {
   return (
     <>
       <div onClick={onClose} style={{
@@ -43,29 +47,26 @@ export function ConnectionsPanel({ open, connected, onToggle, onClose }) {
           <p style={{
             margin: 0, fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.55,
           }}>
-            Connect any combination of the three. The unified Today timeline merges every connected source. Each service gets a color used everywhere in the app.
+            Connect any combination. Today's timeline shows events from every connected source. Apple and Outlook are coming later — for now, Google is the only real option.
           </p>
 
           {INTEGRATIONS.map((it) => (
-            <IntegrationCard
-              key={it.id}
-              integration={it}
-              connected={!!connected[it.id]}
-              onToggle={() => onToggle(it.id)}
-            />
+            <IntegrationCard key={it.id} integration={it} auth={auth} />
           ))}
 
-          <div style={{
-            padding: '12px 14px',
-            border: '1px dashed var(--hair-2)',
-            borderRadius: 8,
-            background: 'transparent',
-          }}>
-            <div className="smcaps" style={{ marginBottom: 6 }}>Future</div>
-            <div className="mono" style={{ fontSize: 10.5, color: 'var(--mute)', lineHeight: 1.6 }}>
-              All sources read through a single ImportSource interface. Swapping the mock for a real OAuth feed is a one-file change — the rest of the app doesn’t care.
+          {!auth.configured && (
+            <div style={{
+              padding: '12px 14px',
+              border: '1px dashed var(--conflict)',
+              borderRadius: 8,
+              background: 'var(--conflict-bg)',
+            }}>
+              <div className="smcaps" style={{ marginBottom: 6, color: 'var(--conflict)' }}>Not configured</div>
+              <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+                VITE_GOOGLE_CLIENT_ID env var is missing. Set it locally in .env.local and on Vercel.
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div style={{
@@ -74,7 +75,7 @@ export function ConnectionsPanel({ open, connected, onToggle, onClose }) {
           background: 'var(--panel)',
         }}>
           <span className="mono" style={{ fontSize: 10.5, color: 'var(--mute)' }}>
-            {Object.values(connected).filter(Boolean).length} of 3 connected
+            {auth.signedIn ? '1 of 1 available connected' : '0 of 1 available connected'}
           </span>
           <div style={{ flex: 1 }} />
           <button className="btn primary sm" onClick={onClose}>Done</button>
@@ -84,8 +85,12 @@ export function ConnectionsPanel({ open, connected, onToggle, onClose }) {
   );
 }
 
-export function IntegrationCard({ integration, connected, onToggle }) {
+export function IntegrationCard({ integration, auth }) {
   const m = SRC_META[integration.id];
+  const isAvailable = AVAILABLE.has(integration.id);
+  const isGoogle = integration.id === 'google';
+  const connected = isGoogle && auth.signedIn;
+
   return (
     <div style={{
       padding: '14px 16px',
@@ -93,20 +98,29 @@ export function IntegrationCard({ integration, connected, onToggle }) {
       border: '1px solid var(--hair)',
       borderRadius: 10,
       display: 'flex', alignItems: 'center', gap: 14,
-      opacity: connected ? 1 : 0.85,
+      opacity: isAvailable ? 1 : 0.6,
     }}>
       <IntegrationMark id={integration.id} size={36} connected={connected} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 13.5, fontWeight: 600 }}>{integration.name}</span>
-          {connected ? (
+          {!isAvailable && (
+            <span className="mono" style={{
+              fontSize: 9.5, padding: '2px 6px',
+              borderRadius: 99,
+              background: 'var(--soft)', color: 'var(--mute)',
+              border: '1px solid var(--hair-2)',
+            }}>coming later</span>
+          )}
+          {isAvailable && connected && (
             <span className="mono" style={{
               fontSize: 9.5, padding: '2px 6px',
               borderRadius: 99,
               background: 'var(--success-bg)', color: 'var(--success)',
               border: '1px solid var(--success)',
             }}>● connected</span>
-          ) : (
+          )}
+          {isAvailable && !connected && (
             <span className="mono" style={{
               fontSize: 9.5, padding: '2px 6px',
               borderRadius: 99,
@@ -116,7 +130,9 @@ export function IntegrationCard({ integration, connected, onToggle }) {
           )}
         </div>
         <div className="mono" style={{ fontSize: 10.5, color: 'var(--mute)', marginTop: 4 }}>
-          {connected ? `${integration.account} · synced 2m ago` : `Sign in with ${integration.name.split(' ')[0]}`}
+          {!isAvailable && 'Native sync not built yet'}
+          {isAvailable && connected && (auth.user?.email || 'Connected to Google Calendar')}
+          {isAvailable && !connected && 'Read-only access to your events'}
         </div>
         {connected && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
@@ -133,9 +149,20 @@ export function IntegrationCard({ integration, connected, onToggle }) {
           </div>
         )}
       </div>
-      <button className="btn sm" onClick={onToggle}>
-        {connected ? 'Disconnect' : 'Connect'}
-      </button>
+      {isAvailable && (
+        <button
+          className={connected ? 'btn sm' : 'btn sm primary'}
+          onClick={() => (connected ? auth.logout() : auth.login())}
+          disabled={!auth.configured}
+        >
+          {connected ? 'Disconnect' : 'Connect'}
+        </button>
+      )}
+      {!isAvailable && (
+        <button className="btn sm" disabled style={{ cursor: 'not-allowed', opacity: 0.5 }}>
+          Connect
+        </button>
+      )}
     </div>
   );
 }

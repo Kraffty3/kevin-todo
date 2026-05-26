@@ -5,7 +5,7 @@ import { INTEGRATIONS } from '../data.js';
 import { ToggleSwitch } from '../components/Shared.jsx';
 import { IntegrationCard } from '../components/ConnectionsPanel.jsx';
 
-export function SettingsView({ defaults, onDefaults, connected, onToggleConnection }) {
+export function SettingsView({ defaults, onDefaults, auth }) {
   const [addVal, setAddVal] = React.useState('');
 
   const addStep = () => {
@@ -137,15 +137,11 @@ export function SettingsView({ defaults, onDefaults, connected, onToggleConnecti
 
       <SettingsSection
         title="Calendar connections"
-        sub="Connect any combination of the three. The unified Today timeline merges every connected source."
+        sub="Connect Google Calendar to load real events. Apple and Outlook are coming later."
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {INTEGRATIONS.map((it) => (
-            <IntegrationCard key={it.id}
-              integration={it}
-              connected={!!connected[it.id]}
-              onToggle={() => onToggleConnection(it.id)}
-            />
+            <IntegrationCard key={it.id} integration={it} auth={auth} />
           ))}
         </div>
       </SettingsSection>

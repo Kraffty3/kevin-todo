@@ -1,124 +1,118 @@
-// App shell — top bar, left nav, view router.
+// App shell — top bar, left nav, view router, real Google Calendar wiring.
 import React from 'react';
-import { GoogleOAuthProvider } from '@react-oauth/google';
-import {
-  DEMO_NOW, INTEGRATIONS,
-  TODAY_EVENTS, WEEK_EVENTS, PROJECTS,
-} from './data.js';
+import { INTEGRATIONS, PROJECTS } from './data.js';
 import { IntegrationMark, SourceBadge } from './components/Shared.jsx';
 import { TodayView } from './views/TodayView.jsx';
 import { ProjectsView } from './views/ProjectsView.jsx';
 import { SettingsView } from './views/SettingsView.jsx';
 import { EventTimerPanel } from './components/EventTimerPanel.jsx';
 import { ConnectionsPanel } from './components/ConnectionsPanel.jsx';
-import { useGoogleAuth, useGoogleCalendar } from './lib/calendar.js';
+import { useAuth } from './lib/auth.js';
+import { useGoogleCalendar, buildDateLabels } from './lib/calendar.js';
 
 const DEFAULT_ACCENT = '#c0772c';
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-
-const MOCK_DAYS = [
-  { day: 18, label: 'Mon · May 18', current: false },
-  { day: 19, label: 'Tue · May 19', current: true },
-  { day: 20, label: 'Wed · May 20', current: false },
-];
-const MOCK_DATE_HEADER = { weekday: 'Tuesday', date: 'May 19, 2026' };
 
 function fmtClock(d) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
-const SHORT_WEEKDAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const SHORT_WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export default function App() {
-  if (!CLIENT_ID) {
-    return <AppInner />;
-  }
-  return (
-    <GoogleOAuthProvider clientId={CLIENT_ID}>
-      <AppInner />
-    </GoogleOAuthProvider>
-  );
+function startOfDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
 }
 
-function AppInner() {
+export default function App() {
   const [view, setView] = React.useState('today');
   const [todayView, setTodayView] = React.useState('day');
   const [connectionsOpen, setConnectionsOpen] = React.useState(false);
   const [selectedEventId, setSelectedEventId] = React.useState(null);
   const [cascadeDefaults, setCascadeDefaults] = React.useState({ values: [30, 15, 10, 5, 2] });
-  const [connected, setConnected] = React.useState({ google: true, apple: true, outlook: true });
+  const [dayOffset, setDayOffset] = React.useState(0);
+  const [tick, setTick] = React.useState(0);
 
-  const auth = CLIENT_ID ? useGoogleAuth() : { signedIn: false, token: null, login: null, logout: null };
-  const cal = useGoogleCalendar(auth.token);
+  const auth = useAuth();
+
+  // Refresh "now" every 30 s so the timeline / timer update without reloads
+  React.useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   React.useEffect(() => {
     document.documentElement.style.setProperty('--accent', DEFAULT_ACCENT);
   }, []);
 
-  const liveMode = auth.signedIn && !cal.loading && !cal.error;
-  const now = liveMode ? new Date() : DEMO_NOW;
-  const events = liveMode ? cal.today : TODAY_EVENTS;
-  const weekEvents = liveMode ? cal.week : WEEK_EVENTS;
-  const days = liveMode ? cal.days : MOCK_DAYS;
-  const dateHeader = liveMode ? cal.dateHeader : MOCK_DATE_HEADER;
+  const now = new Date();
+  const centerDate = React.useMemo(() => {
+    const d = startOfDay(now);
+    d.setDate(d.getDate() + dayOffset);
+    return d;
+  }, [dayOffset, tick, now.getDate()]);
 
-  const visibleEvents = events.filter((e) => e.src === 'manual' || connected[e.src]);
-  const visibleWeek = Object.fromEntries(
-    Object.entries(weekEvents).map(([k, list]) => [
-      k, list.filter((e) => e.src === 'manual' || connected[e.src]),
-    ])
-  );
+  const cal = useGoogleCalendar(auth.token, centerDate);
+  const { days, dateHeader } = buildDateLabels(centerDate);
 
-  const nextUp = visibleEvents
+  const events = cal.today;
+  const weekEvents = cal.week;
+
+  const nextUp = events
     .filter((e) => e.important && e.start.getTime() > now.getTime())
     .sort((a, b) => a.start - b.start)[0];
 
   const selectedEvent = selectedEventId
-    ? [...visibleEvents, ...Object.values(visibleWeek).flat()].find((e) => e.id === selectedEventId)
+    ? [...events, ...Object.values(weekEvents).flat()].find((e) => e.id === selectedEventId)
     : null;
 
-  const toggleConnection = (id) => setConnected((c) => ({ ...c, [id]: !c[id] }));
+  const shiftDay = (delta) => setDayOffset((o) => o + delta);
+  const resetDay = () => setDayOffset(0);
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <TopBar
         nextUp={nextUp}
         now={now}
-        connected={connected}
+        auth={auth}
         onOpenConnections={() => setConnectionsOpen(true)}
         onSelectEvent={setSelectedEventId}
-        auth={auth}
-        calLoading={cal.loading}
-        calError={cal.error}
       />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <LeftNav
           view={view}
           onView={setView}
-          connected={connected}
+          auth={auth}
           onOpenConnections={() => setConnectionsOpen(true)}
         />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg)' }}>
-          {view === 'today' && (
+          {view === 'today' && !auth.signedIn && (
+            <EmptyConnect onConnect={auth.login} configured={auth.configured} />
+          )}
+          {view === 'today' && auth.signedIn && (
             <TodayView
-              events={visibleEvents}
-              weekEvents={visibleWeek}
+              events={events}
+              weekEvents={weekEvents}
               view={todayView}
               onView={setTodayView}
               onSelectEvent={setSelectedEventId}
               now={now}
               days={days}
               dateHeader={dateHeader}
+              dayOffset={dayOffset}
+              onShiftDay={shiftDay}
+              onResetDay={resetDay}
+              loading={cal.loading}
+              error={cal.error}
             />
           )}
           {view === 'projects' && (
-            <ProjectsView projects={PROJECTS} connected={connected} />
+            <ProjectsView projects={PROJECTS} connected={{ google: auth.signedIn }} />
           )}
           {view === 'settings' && (
             <SettingsView
               defaults={cascadeDefaults}
               onDefaults={setCascadeDefaults}
-              connected={connected}
-              onToggleConnection={toggleConnection}
+              auth={auth}
             />
           )}
         </main>
@@ -135,16 +129,53 @@ function AppInner() {
 
       <ConnectionsPanel
         open={connectionsOpen}
-        connected={connected}
-        onToggle={toggleConnection}
+        auth={auth}
         onClose={() => setConnectionsOpen(false)}
       />
     </div>
   );
 }
 
-function TopBar({ nextUp, now, connected, onOpenConnections, onSelectEvent, auth, calLoading, calError }) {
-  const connectedCount = Object.values(connected).filter(Boolean).length;
+function EmptyConnect({ onConnect, configured }) {
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      gap: 18, padding: 40,
+    }}>
+      <div style={{
+        width: 48, height: 48, borderRadius: 99,
+        background: 'var(--soft)',
+        border: '1px solid var(--hair-2)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <IntegrationMark id="google" size={32} connected={false} />
+      </div>
+      <div style={{ textAlign: 'center', maxWidth: 380 }}>
+        <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Connect Google Calendar</div>
+        <div style={{ fontSize: 13, color: 'var(--mute)', lineHeight: 1.5 }}>
+          Sign in to load your real events. The app reads your primary calendar in read-only mode — nothing is written back yet.
+        </div>
+      </div>
+      <button
+        className="btn primary"
+        onClick={onConnect}
+        disabled={!configured}
+        style={{ padding: '10px 18px', fontSize: 13 }}
+      >
+        Sign in with Google
+      </button>
+      {!configured && (
+        <div className="mono" style={{ fontSize: 10.5, color: 'var(--conflict)' }}>
+          VITE_GOOGLE_CLIENT_ID is not set
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TopBar({ nextUp, now, auth, onOpenConnections, onSelectEvent }) {
+  const connectedCount = auth.signedIn ? 1 : 0;
   return (
     <header style={{
       display: 'flex', alignItems: 'center', gap: 16,
@@ -156,25 +187,16 @@ function TopBar({ nextUp, now, connected, onOpenConnections, onSelectEvent, auth
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <BrandMark />
         <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: -0.2 }}>todo</span>
-        <span className="mono" style={{ fontSize: 10.5, color: 'var(--faint)', marginLeft: 4 }}>
-          {auth.signedIn ? '· live' : '· demo mode'}
-        </span>
+        {auth.user?.email && (
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--faint)', marginLeft: 4 }}>
+            · {auth.user.email}
+          </span>
+        )}
       </div>
 
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
         <NextUpStrip event={nextUp} now={now} onSelectEvent={onSelectEvent} />
       </div>
-
-      {calError && (
-        <span className="mono" style={{ fontSize: 10, color: 'var(--conflict)' }} title={calError}>
-          calendar error
-        </span>
-      )}
-      {calLoading && (
-        <span className="mono" style={{ fontSize: 10, color: 'var(--mute)' }}>loading…</span>
-      )}
-
-      <AuthButton auth={auth} />
 
       <button onClick={onOpenConnections} style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -185,14 +207,23 @@ function TopBar({ nextUp, now, connected, onOpenConnections, onSelectEvent, auth
         cursor: 'pointer',
       }}>
         <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-          {INTEGRATIONS.map((it, i) => (
-            <span key={it.id} style={{ marginLeft: i === 0 ? 0 : -6, position: 'relative', zIndex: INTEGRATIONS.length - i, filter: connected[it.id] ? 'none' : 'grayscale(1)' }}>
-              <IntegrationMark id={it.id} size={22} connected={connected[it.id]} />
-            </span>
-          ))}
+          {INTEGRATIONS.map((it, i) => {
+            const isConnected = it.id === 'google' && auth.signedIn;
+            return (
+              <span key={it.id} style={{
+                marginLeft: i === 0 ? 0 : -6,
+                position: 'relative',
+                zIndex: INTEGRATIONS.length - i,
+                filter: isConnected ? 'none' : 'grayscale(1)',
+                opacity: isConnected ? 1 : 0.55,
+              }}>
+                <IntegrationMark id={it.id} size={22} connected={isConnected} />
+              </span>
+            );
+          })}
         </span>
         <span className="mono" style={{ fontSize: 11, color: 'var(--ink-2)' }}>
-          {connectedCount}/3 connected
+          {connectedCount}/1 connected
         </span>
       </button>
 
@@ -202,28 +233,6 @@ function TopBar({ nextUp, now, connected, onOpenConnections, onSelectEvent, auth
         </span>
       </div>
     </header>
-  );
-}
-
-function AuthButton({ auth }) {
-  if (!CLIENT_ID) {
-    return (
-      <span className="mono" style={{ fontSize: 10, color: 'var(--mute)' }} title="Set VITE_GOOGLE_CLIENT_ID to enable">
-        no client id
-      </span>
-    );
-  }
-  if (auth.signedIn) {
-    return (
-      <button onClick={auth.logout} className="btn sm">
-        Sign out
-      </button>
-    );
-  }
-  return (
-    <button onClick={auth.login} className="btn sm primary">
-      Sign in with Google
-    </button>
   );
 }
 
@@ -257,25 +266,21 @@ function NextUpStrip({ event, now, onSelectEvent }) {
         borderRadius: 99,
         fontSize: 12, color: 'var(--mute)',
       }}>
-        No important items queued today
+        No important items queued
       </div>
     );
   }
   const minsUntil = Math.round((event.start.getTime() - now.getTime()) / 60000);
-
   return (
     <button onClick={() => onSelectEvent && onSelectEvent(event.id)} style={{
       display: 'flex', alignItems: 'center', gap: 10,
-      padding: '4px 12px 4px 12px',
+      padding: '4px 12px',
       background: 'var(--accent-bg)',
       border: '1px solid var(--accent)',
       borderRadius: 99,
-      maxWidth: 460,
-      minWidth: 0,
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      cursor: 'pointer',
-      fontFamily: 'inherit',
+      maxWidth: 460, minWidth: 0,
+      whiteSpace: 'nowrap', overflow: 'hidden',
+      cursor: 'pointer', fontFamily: 'inherit',
     }}>
       <span className="smcaps" style={{ color: 'var(--accent)', fontSize: 9.5, flex: '0 0 auto' }}>Next up</span>
       <span style={{
@@ -292,9 +297,9 @@ function NextUpStrip({ event, now, onSelectEvent }) {
   );
 }
 
-function LeftNav({ view, onView, connected, onOpenConnections }) {
+function LeftNav({ view, onView, auth, onOpenConnections }) {
   const items = [
-    { id: 'today',    label: 'Today',    icon: <NavIconToday /> },
+    { id: 'today', label: 'Today', icon: <NavIconToday /> },
     { id: 'projects', label: 'Projects', icon: <NavIconProjects /> },
     { id: 'settings', label: 'Settings', icon: <NavIconSettings /> },
   ];
@@ -331,25 +336,35 @@ function LeftNav({ view, onView, connected, onOpenConnections }) {
           <span className="smcaps">Sources</span>
           <span className="mono" style={{
             marginLeft: 'auto', fontSize: 9.5, color: 'var(--mute)',
-          }}>{Object.values(connected).filter(Boolean).length}/3</span>
+          }}>{auth.signedIn ? '1' : '0'}/1</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {INTEGRATIONS.map((it) => (
-            <div key={it.id} style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              fontSize: 11.5,
-              color: connected[it.id] ? 'var(--ink-3)' : 'var(--faint)',
-            }}>
-              <IntegrationMark id={it.id} size={16} connected={connected[it.id]} />
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {it.name}
-              </span>
-              <span className="dot" style={{
-                background: connected[it.id] ? 'var(--success)' : 'var(--hair-2)',
-                width: 6, height: 6,
-              }} />
-            </div>
-          ))}
+          {INTEGRATIONS.map((it) => {
+            const isConnected = it.id === 'google' && auth.signedIn;
+            const available = it.id === 'google';
+            return (
+              <div key={it.id} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 11.5,
+                color: isConnected ? 'var(--ink-3)' : 'var(--faint)',
+                opacity: available ? 1 : 0.6,
+              }}>
+                <IntegrationMark id={it.id} size={16} connected={isConnected} />
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {it.name}
+                  {!available && (
+                    <span className="mono" style={{ fontSize: 9, color: 'var(--faint)', marginLeft: 4 }}>
+                      (soon)
+                    </span>
+                  )}
+                </span>
+                <span className="dot" style={{
+                  background: isConnected ? 'var(--success)' : 'var(--hair-2)',
+                  width: 6, height: 6,
+                }} />
+              </div>
+            );
+          })}
         </div>
         <button onClick={onOpenConnections} style={{
           marginTop: 10,
@@ -362,8 +377,8 @@ function LeftNav({ view, onView, connected, onOpenConnections }) {
           fontFamily: 'inherit', fontSize: 11.5, fontWeight: 500,
           cursor: 'pointer',
         }}>
-          <span className="mono" style={{ fontSize: 12, lineHeight: 1 }}>＋</span>
-          Connect calendar
+          <span className="mono" style={{ fontSize: 12, lineHeight: 1 }}>⚙</span>
+          Manage connections
         </button>
       </div>
     </nav>

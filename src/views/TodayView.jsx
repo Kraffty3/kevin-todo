@@ -16,11 +16,19 @@ function fmtClock(d) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now, days, dateHeader }) {
+export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now, days, dateHeader, dayOffset, onShiftDay, onResetDay, loading, error }) {
   return (
     <div style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, borderRight: '1px solid var(--hair)' }}>
-        <TodaySubHeader view={view} onView={onView} dateHeader={dateHeader} />
+        <TodaySubHeader
+          view={view} onView={onView}
+          dateHeader={dateHeader}
+          dayOffset={dayOffset}
+          onShiftDay={onShiftDay}
+          onResetDay={onResetDay}
+          loading={loading}
+          error={error}
+        />
         <div style={{ padding: '12px 22px', display: 'flex', gap: 12, alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
           <QuickAdd />
           <div style={{ display: 'flex', gap: 6 }}>
@@ -44,7 +52,7 @@ export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now
   );
 }
 
-function TodaySubHeader({ view, onView, dateHeader }) {
+function TodaySubHeader({ view, onView, dateHeader, dayOffset, onShiftDay, onResetDay, loading, error }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 16,
@@ -56,10 +64,18 @@ function TodaySubHeader({ view, onView, dateHeader }) {
         <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.4, marginTop: 2 }}>{dateHeader.date}</div>
       </div>
       <div style={{ display: 'flex', gap: 6, marginLeft: 8 }}>
-        <button className="btn sm">‹</button>
-        <button className="btn sm">Today</button>
-        <button className="btn sm">›</button>
+        <button className="btn sm" onClick={() => onShiftDay && onShiftDay(-1)} title="Previous day">‹</button>
+        <button className="btn sm" onClick={() => onResetDay && onResetDay()} disabled={dayOffset === 0}>Today</button>
+        <button className="btn sm" onClick={() => onShiftDay && onShiftDay(1)} title="Next day">›</button>
       </div>
+      {loading && (
+        <span className="mono" style={{ fontSize: 10.5, color: 'var(--mute)' }}>Loading…</span>
+      )}
+      {error && (
+        <span className="mono" style={{ fontSize: 10.5, color: 'var(--conflict)' }} title={error}>
+          Calendar error
+        </span>
+      )}
       <div style={{ flex: 1 }} />
       <div className="seg">
         <button className={view === 'day' ? 'on' : ''} onClick={() => onView('day')}>Day</button>
