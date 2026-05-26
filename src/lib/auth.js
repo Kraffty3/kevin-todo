@@ -5,7 +5,7 @@
 //   3. on app load, consumeRedirect() parses hash, stores token, clears hash
 import React from 'react';
 
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 const SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events';
 const TOKEN_KEY = 'kevin-todo:gtoken';
 const STATE_KEY = 'kevin-todo:oauth-state';
