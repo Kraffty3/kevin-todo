@@ -1,8 +1,6 @@
 // Today view — vertical timeline + right queue, with Day / 3-day toggle.
 import React from 'react';
-import {
-  SRC_META, INBOX, DEMO_NOW, fmtClock,
-} from '../data.js';
+import { SRC_META, INBOX } from '../data.js';
 import {
   SourceBadge, EventCard, HourLines, NowLine,
   QuickAdd, StaleStrip, SectionLabel,
@@ -14,11 +12,15 @@ const WK_HPHR = 40;
 const DAY_START = 8;
 const DAY_END = 19;
 
-export function TodayView({ events, weekEvents, view, onView, onSelectEvent }) {
+function fmtClock(d) {
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now, days, dateHeader }) {
   return (
     <div style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, borderRight: '1px solid var(--hair)' }}>
-        <TodaySubHeader view={view} onView={onView} />
+        <TodaySubHeader view={view} onView={onView} dateHeader={dateHeader} />
         <div style={{ padding: '12px 22px', display: 'flex', gap: 12, alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
           <QuickAdd />
           <div style={{ display: 'flex', gap: 6 }}>
@@ -30,19 +32,19 @@ export function TodayView({ events, weekEvents, view, onView, onSelectEvent }) {
 
         <div className="scroll" style={{ flex: 1, position: 'relative', minHeight: 0 }}>
           {view === 'day'
-            ? <DayBody events={events} onSelectEvent={onSelectEvent} />
-            : <WeekBody week={weekEvents} onSelectEvent={onSelectEvent} />}
+            ? <DayBody events={events} now={now} onSelectEvent={onSelectEvent} />
+            : <WeekBody week={weekEvents} now={now} days={days} onSelectEvent={onSelectEvent} />}
         </div>
 
         <StaleStrip />
       </div>
 
-      <RightQueue events={events} onSelectEvent={onSelectEvent} />
+      <RightQueue events={events} now={now} onSelectEvent={onSelectEvent} />
     </div>
   );
 }
 
-function TodaySubHeader({ view, onView }) {
+function TodaySubHeader({ view, onView, dateHeader }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 16,
@@ -50,8 +52,8 @@ function TodaySubHeader({ view, onView }) {
       borderBottom: '1px solid var(--hair)',
     }}>
       <div>
-        <div className="smcaps">Tuesday</div>
-        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.4, marginTop: 2 }}>May 19, 2026</div>
+        <div className="smcaps">{dateHeader.weekday}</div>
+        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.4, marginTop: 2 }}>{dateHeader.date}</div>
       </div>
       <div style={{ display: 'flex', gap: 6, marginLeft: 8 }}>
         <button className="btn sm">‹</button>
@@ -67,11 +69,12 @@ function TodaySubHeader({ view, onView }) {
   );
 }
 
-function DayBody({ events, onSelectEvent }) {
+function DayBody({ events, now, onSelectEvent }) {
   const hours = DAY_END - DAY_START;
   const totalH = hours * DAY_HPHR + 24;
-  const nowH = (DEMO_NOW.getHours() + DEMO_NOW.getMinutes() / 60) - DAY_START;
+  const nowH = (now.getHours() + now.getMinutes() / 60) - DAY_START;
   const nowTop = nowH * DAY_HPHR + 8;
+  const nowInView = nowH >= 0 && nowH <= hours;
 
   const conflicts = groupConflicts(events);
 
@@ -85,8 +88,8 @@ function DayBody({ events, onSelectEvent }) {
           const end =   (e.end.getHours()   + e.end.getMinutes()   / 60) - DAY_START;
           const top = start * DAY_HPHR + 8 + 2;
           const height = Math.max(28, (end - start) * DAY_HPHR - 4);
-          const past = e.end.getTime() < DEMO_NOW.getTime();
-          const current = e.start.getTime() <= DEMO_NOW.getTime() && e.end.getTime() > DEMO_NOW.getTime();
+          const past = e.end.getTime() < now.getTime();
+          const current = e.start.getTime() <= now.getTime() && e.end.getTime() > now.getTime();
           const group = conflicts[e.id];
           const half = group ? (group.idx === 0 ? 'left' : 'right') : null;
           return (
@@ -109,7 +112,7 @@ function DayBody({ events, onSelectEvent }) {
             }} />
           );
         })}
-        <NowLine top={nowTop} />
+        {nowInView && <NowLine top={nowTop} label={fmtClock(now)} />}
       </div>
     </div>
   );
@@ -152,14 +155,11 @@ function groupConflicts(events) {
   return result;
 }
 
-function WeekBody({ week, onSelectEvent }) {
-  const days = [
-    { day: 18, label: 'Mon · May 18', current: false },
-    { day: 19, label: 'Tue · May 19', current: true },
-    { day: 20, label: 'Wed · May 20', current: false },
-  ];
+function WeekBody({ week, now, days, onSelectEvent }) {
   const hours = DAY_END - DAY_START;
   const bodyH = hours * WK_HPHR + 24;
+  const nowH = (now.getHours() + now.getMinutes() / 60) - DAY_START;
+  const nowInView = nowH >= 0 && nowH <= hours;
 
   return (
     <div style={{ display: 'flex', position: 'relative' }}>
@@ -173,7 +173,6 @@ function WeekBody({ week, onSelectEvent }) {
       </div>
       {days.map((d) => {
         const events = week[d.day] || [];
-        const nowH = (DEMO_NOW.getHours() + DEMO_NOW.getMinutes() / 60) - DAY_START;
         const nowTop = nowH * WK_HPHR + 8;
         const conflicts = groupConflicts(events);
         return (
@@ -201,8 +200,8 @@ function WeekBody({ week, onSelectEvent }) {
                 const end =   (e.end.getHours()   + e.end.getMinutes()   / 60) - DAY_START;
                 const top = start * WK_HPHR + 8 + 1;
                 const height = Math.max(22, (end - start) * WK_HPHR - 2);
-                const past = e.end.getTime() < DEMO_NOW.getTime();
-                const current = d.current && e.start.getTime() <= DEMO_NOW.getTime() && e.end.getTime() > DEMO_NOW.getTime();
+                const past = e.end.getTime() < now.getTime();
+                const current = d.current && e.start.getTime() <= now.getTime() && e.end.getTime() > now.getTime();
                 const group = conflicts[e.id];
                 const half = group ? (group.idx === 0 ? 'left' : 'right') : null;
                 return (
@@ -226,7 +225,7 @@ function WeekBody({ week, onSelectEvent }) {
                   }} />
                 );
               })}
-              {d.current && <NowLine top={nowTop} label={fmtClock()} />}
+              {d.current && nowInView && <NowLine top={nowTop} label={fmtClock(now)} />}
             </div>
           </div>
         );
@@ -235,7 +234,7 @@ function WeekBody({ week, onSelectEvent }) {
   );
 }
 
-function RightQueue({ events, onSelectEvent }) {
+function RightQueue({ events, now, onSelectEvent }) {
   const important = events.filter((e) => e.important);
   return (
     <div style={{
@@ -246,8 +245,13 @@ function RightQueue({ events, onSelectEvent }) {
       <div style={{ padding: '16px 18px 14px', borderBottom: '1px solid var(--hair)' }}>
         <SectionLabel>Important · today</SectionLabel>
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {important.length === 0 && (
+            <div className="mono" style={{ fontSize: 11, color: 'var(--mute)', padding: '6px 2px' }}>
+              No important items today.
+            </div>
+          )}
           {important.map((e) => (
-            <QueueItem key={e.id} event={e} onClick={() => onSelectEvent && onSelectEvent(e.id)} />
+            <QueueItem key={e.id} event={e} now={now} onClick={() => onSelectEvent && onSelectEvent(e.id)} />
           ))}
         </div>
       </div>
@@ -291,10 +295,10 @@ function RightQueue({ events, onSelectEvent }) {
   );
 }
 
-function QueueItem({ event, onClick }) {
+function QueueItem({ event, now, onClick }) {
   const m = SRC_META[event.src];
-  const inMeeting = event.start.getTime() <= DEMO_NOW.getTime() && event.end.getTime() > DEMO_NOW.getTime();
-  const minsUntil = Math.round((event.start.getTime() - DEMO_NOW.getTime()) / 60000);
+  const inMeeting = event.start.getTime() <= now.getTime() && event.end.getTime() > now.getTime();
+  const minsUntil = Math.round((event.start.getTime() - now.getTime()) / 60000);
   const tFired = minsUntil <= 0 ? 5 :
                  minsUntil <= 2 ? 4 :
                  minsUntil <= 5 ? 3 :

@@ -1,7 +1,8 @@
 // App shell — top bar, left nav, view router.
 import React from 'react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import {
-  DEMO_NOW, fmtClock, INTEGRATIONS, SRC_META,
+  DEMO_NOW, INTEGRATIONS,
   TODAY_EVENTS, WEEK_EVENTS, PROJECTS,
 } from './data.js';
 import { IntegrationMark, SourceBadge } from './components/Shared.jsx';
@@ -10,10 +11,35 @@ import { ProjectsView } from './views/ProjectsView.jsx';
 import { SettingsView } from './views/SettingsView.jsx';
 import { EventTimerPanel } from './components/EventTimerPanel.jsx';
 import { ConnectionsPanel } from './components/ConnectionsPanel.jsx';
+import { useGoogleAuth, useGoogleCalendar } from './lib/calendar.js';
 
 const DEFAULT_ACCENT = '#c0772c';
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+const MOCK_DAYS = [
+  { day: 18, label: 'Mon · May 18', current: false },
+  { day: 19, label: 'Tue · May 19', current: true },
+  { day: 20, label: 'Wed · May 20', current: false },
+];
+const MOCK_DATE_HEADER = { weekday: 'Tuesday', date: 'May 19, 2026' };
+
+function fmtClock(d) {
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+const SHORT_WEEKDAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 export default function App() {
+  if (!CLIENT_ID) {
+    return <AppInner />;
+  }
+  return (
+    <GoogleOAuthProvider clientId={CLIENT_ID}>
+      <AppInner />
+    </GoogleOAuthProvider>
+  );
+}
+
+function AppInner() {
   const [view, setView] = React.useState('today');
   const [todayView, setTodayView] = React.useState('day');
   const [connectionsOpen, setConnectionsOpen] = React.useState(false);
@@ -21,21 +47,29 @@ export default function App() {
   const [cascadeDefaults, setCascadeDefaults] = React.useState({ values: [30, 15, 10, 5, 2] });
   const [connected, setConnected] = React.useState({ google: true, apple: true, outlook: true });
 
+  const auth = CLIENT_ID ? useGoogleAuth() : { signedIn: false, token: null, login: null, logout: null };
+  const cal = useGoogleCalendar(auth.token);
+
   React.useEffect(() => {
     document.documentElement.style.setProperty('--accent', DEFAULT_ACCENT);
   }, []);
 
-  const visibleEvents = TODAY_EVENTS.filter(
-    (e) => e.src === 'manual' || connected[e.src]
-  );
+  const liveMode = auth.signedIn && !cal.loading && !cal.error;
+  const now = liveMode ? new Date() : DEMO_NOW;
+  const events = liveMode ? cal.today : TODAY_EVENTS;
+  const weekEvents = liveMode ? cal.week : WEEK_EVENTS;
+  const days = liveMode ? cal.days : MOCK_DAYS;
+  const dateHeader = liveMode ? cal.dateHeader : MOCK_DATE_HEADER;
+
+  const visibleEvents = events.filter((e) => e.src === 'manual' || connected[e.src]);
   const visibleWeek = Object.fromEntries(
-    Object.entries(WEEK_EVENTS).map(([k, list]) => [
+    Object.entries(weekEvents).map(([k, list]) => [
       k, list.filter((e) => e.src === 'manual' || connected[e.src]),
     ])
   );
 
   const nextUp = visibleEvents
-    .filter((e) => e.important && e.start.getTime() > DEMO_NOW.getTime())
+    .filter((e) => e.important && e.start.getTime() > now.getTime())
     .sort((a, b) => a.start - b.start)[0];
 
   const selectedEvent = selectedEventId
@@ -48,9 +82,13 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <TopBar
         nextUp={nextUp}
+        now={now}
         connected={connected}
         onOpenConnections={() => setConnectionsOpen(true)}
         onSelectEvent={setSelectedEventId}
+        auth={auth}
+        calLoading={cal.loading}
+        calError={cal.error}
       />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <LeftNav
@@ -67,6 +105,9 @@ export default function App() {
               view={todayView}
               onView={setTodayView}
               onSelectEvent={setSelectedEventId}
+              now={now}
+              days={days}
+              dateHeader={dateHeader}
             />
           )}
           {view === 'projects' && (
@@ -87,6 +128,7 @@ export default function App() {
         <EventTimerPanel
           event={selectedEvent}
           defaults={cascadeDefaults}
+          now={now}
           onClose={() => setSelectedEventId(null)}
         />
       )}
@@ -101,7 +143,7 @@ export default function App() {
   );
 }
 
-function TopBar({ nextUp, connected, onOpenConnections, onSelectEvent }) {
+function TopBar({ nextUp, now, connected, onOpenConnections, onSelectEvent, auth, calLoading, calError }) {
   const connectedCount = Object.values(connected).filter(Boolean).length;
   return (
     <header style={{
@@ -114,12 +156,25 @@ function TopBar({ nextUp, connected, onOpenConnections, onSelectEvent }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <BrandMark />
         <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: -0.2 }}>todo</span>
-        <span className="mono" style={{ fontSize: 10.5, color: 'var(--faint)', marginLeft: 4 }}>· Kevin Ko</span>
+        <span className="mono" style={{ fontSize: 10.5, color: 'var(--faint)', marginLeft: 4 }}>
+          {auth.signedIn ? '· live' : '· demo mode'}
+        </span>
       </div>
 
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-        <NextUpStrip event={nextUp} onSelectEvent={onSelectEvent} />
+        <NextUpStrip event={nextUp} now={now} onSelectEvent={onSelectEvent} />
       </div>
+
+      {calError && (
+        <span className="mono" style={{ fontSize: 10, color: 'var(--conflict)' }} title={calError}>
+          calendar error
+        </span>
+      )}
+      {calLoading && (
+        <span className="mono" style={{ fontSize: 10, color: 'var(--mute)' }}>loading…</span>
+      )}
+
+      <AuthButton auth={auth} />
 
       <button onClick={onOpenConnections} style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -142,9 +197,33 @@ function TopBar({ nextUp, connected, onOpenConnections, onSelectEvent }) {
       </button>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span className="mono" style={{ fontSize: 11, color: 'var(--mute)' }}>{fmtClock()} · Tue</span>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--mute)' }}>
+          {fmtClock(now)} · {SHORT_WEEKDAY[now.getDay()]}
+        </span>
       </div>
     </header>
+  );
+}
+
+function AuthButton({ auth }) {
+  if (!CLIENT_ID) {
+    return (
+      <span className="mono" style={{ fontSize: 10, color: 'var(--mute)' }} title="Set VITE_GOOGLE_CLIENT_ID to enable">
+        no client id
+      </span>
+    );
+  }
+  if (auth.signedIn) {
+    return (
+      <button onClick={auth.logout} className="btn sm">
+        Sign out
+      </button>
+    );
+  }
+  return (
+    <button onClick={auth.login} className="btn sm primary">
+      Sign in with Google
+    </button>
   );
 }
 
@@ -168,7 +247,7 @@ function BrandMark() {
   );
 }
 
-function NextUpStrip({ event, onSelectEvent }) {
+function NextUpStrip({ event, now, onSelectEvent }) {
   if (!event) {
     return (
       <div style={{
@@ -182,7 +261,7 @@ function NextUpStrip({ event, onSelectEvent }) {
       </div>
     );
   }
-  const minsUntil = Math.round((event.start.getTime() - DEMO_NOW.getTime()) / 60000);
+  const minsUntil = Math.round((event.start.getTime() - now.getTime()) / 60000);
 
   return (
     <button onClick={() => onSelectEvent && onSelectEvent(event.id)} style={{
@@ -209,10 +288,6 @@ function NextUpStrip({ event, onSelectEvent }) {
       <span className="mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)', flex: '0 0 auto' }}>
         {minsUntil}m
       </span>
-      <span className="mono" style={{
-        fontSize: 9.5, color: 'var(--accent)', flex: '0 0 auto',
-        opacity: 0.8, letterSpacing: 0.3,
-      }}>· T−30 fired</span>
     </button>
   );
 }
@@ -245,22 +320,6 @@ function LeftNav({ view, onView, connected, onOpenConnections }) {
           }}>
             <span style={{ color: view === it.id ? 'var(--ink)' : 'var(--mute)' }}>{it.icon}</span>
             {it.label}
-            {it.id === 'today' && <span className="mono" style={{
-              marginLeft: 'auto', fontSize: 10,
-              color: 'var(--mute)',
-              padding: '2px 6px',
-              background: view === it.id ? 'var(--panel)' : 'var(--soft)',
-              borderRadius: 99,
-              border: '1px solid var(--hair-2)',
-            }}>7</span>}
-            {it.id === 'projects' && <span className="mono" style={{
-              marginLeft: 'auto', fontSize: 10,
-              color: 'var(--mute)',
-              padding: '2px 6px',
-              background: view === it.id ? 'var(--panel)' : 'var(--soft)',
-              borderRadius: 99,
-              border: '1px solid var(--hair-2)',
-            }}>4</span>}
           </button>
         ))}
       </div>

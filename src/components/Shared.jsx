@@ -1,7 +1,7 @@
 // Shared hi-fi atoms — source badge, integration mark, cascade pips,
 // timeline event card, now-line, quick-add, stale strip.
 import React from 'react';
-import { SRC_META, STALE, DEMO_NOW, fmtClock } from '../data.js';
+import { SRC_META, STALE } from '../data.js';
 
 export function SourceBadge({ src = 'google', size = 'sm', dotOnly }) {
   const m = SRC_META[src] || SRC_META.manual;
@@ -209,7 +209,7 @@ export function HourLines({ count, hPerHr }) {
   return <>{out}</>;
 }
 
-export function NowLine({ top, label = fmtClock() }) {
+export function NowLine({ top, label = '' }) {
   return (
     <div style={{ position: 'absolute', top, left: -56, right: 0, pointerEvents: 'none', zIndex: 4 }}>
       <span className="mono" style={{

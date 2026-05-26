@@ -2,7 +2,7 @@
 // Auto-generates: cascade leading up to start (T-30, T-15, T-10, T-5, T-2)
 // + during-event sub-timers (every 15m through duration + a last-5-min warning + end).
 import React from 'react';
-import { DEMO_NOW, SRC_META } from '../data.js';
+import { SRC_META } from '../data.js';
 import {
   SourceBadge, ImportantStar, SmallTag, SectionLabel, fmtRange,
 } from './Shared.jsx';
@@ -36,24 +36,24 @@ function tickKey(t) {
   return `${t.kind}-${t.at.getTime()}`;
 }
 
-export function EventTimerPanel({ event, defaults, onClose }) {
+export function EventTimerPanel({ event, defaults, now, onClose }) {
   const [checkedExtra, setCheckedExtra] = React.useState({});
 
   if (!event) return null;
 
   const m = SRC_META[event.src];
   const durationMins = Math.round((event.end.getTime() - event.start.getTime()) / 60000);
-  const minsUntil = Math.round((event.start.getTime() - DEMO_NOW.getTime()) / 60000);
-  const minsLeft = Math.round((event.end.getTime() - DEMO_NOW.getTime()) / 60000);
-  const past = event.end.getTime() < DEMO_NOW.getTime();
-  const inProgress = !past && event.start.getTime() <= DEMO_NOW.getTime();
+  const minsUntil = Math.round((event.start.getTime() - now.getTime()) / 60000);
+  const minsLeft = Math.round((event.end.getTime() - now.getTime()) / 60000);
+  const past = event.end.getTime() < now.getTime();
+  const inProgress = !past && event.start.getTime() <= now.getTime();
 
   const preCascade = buildPreCascade(defaults.values, event.start);
   const subs = buildSubTimers(event.start, event.end);
 
   const tickDone = (t) => {
     if (checkedExtra[tickKey(t)] !== undefined) return checkedExtra[tickKey(t)];
-    return t.at.getTime() <= DEMO_NOW.getTime();
+    return t.at.getTime() <= now.getTime();
   };
 
   const toggleTick = (t) => {
@@ -152,7 +152,7 @@ export function EventTimerPanel({ event, defaults, onClose }) {
                 tick={t}
                 done={tickDone(t)}
                 onToggle={() => toggleTick(t)}
-                contextNow={DEMO_NOW}
+                contextNow={now}
               />
             ))}
           </div>
@@ -172,7 +172,7 @@ export function EventTimerPanel({ event, defaults, onClose }) {
                 tick={t}
                 done={tickDone(t)}
                 onToggle={() => toggleTick(t)}
-                contextNow={DEMO_NOW}
+                contextNow={now}
               />
             ))}
           </div>
