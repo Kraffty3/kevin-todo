@@ -9,6 +9,7 @@ import { EventTimerPanel } from './components/EventTimerPanel.jsx';
 import { ConnectionsPanel } from './components/ConnectionsPanel.jsx';
 import { useAuth } from './lib/auth.js';
 import { useGoogleCalendar, buildDateLabels } from './lib/calendar.js';
+import { useLocalEvents } from './lib/quickAdd.js';
 
 const DEFAULT_ACCENT = '#c0772c';
 
@@ -33,6 +34,7 @@ export default function App() {
   const [tick, setTick] = React.useState(0);
 
   const auth = useAuth();
+  const local = useLocalEvents();
 
   // Refresh "now" every 30 s so the timeline / timer update without reloads
   React.useEffect(() => {
@@ -54,8 +56,21 @@ export default function App() {
   const cal = useGoogleCalendar(auth.token, centerDate);
   const { days, dateHeader } = buildDateLabels(centerDate);
 
-  const events = cal.today;
-  const weekEvents = cal.week;
+  // Merge local quick-add events with Google events for the visible day
+  const dayStart = startOfDay(centerDate);
+  const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999);
+  const localToday = local.events.filter((e) => e.start >= dayStart && e.start <= dayEnd);
+
+  const events = [...cal.today, ...localToday];
+
+  const weekEvents = React.useMemo(() => {
+    const merged = { ...cal.week };
+    for (const e of local.events) {
+      const d = e.start.getDate();
+      merged[d] = [...(merged[d] || []), e];
+    }
+    return merged;
+  }, [cal.week, local.events]);
 
   const nextUp = events
     .filter((e) => e.important && e.start.getTime() > now.getTime())
@@ -85,10 +100,10 @@ export default function App() {
           onOpenConnections={() => setConnectionsOpen(true)}
         />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg)' }}>
-          {view === 'today' && !auth.signedIn && (
+          {view === 'today' && !auth.signedIn && local.events.length === 0 && (
             <EmptyConnect onConnect={auth.login} configured={auth.configured} />
           )}
-          {view === 'today' && auth.signedIn && (
+          {view === 'today' && (auth.signedIn || local.events.length > 0) && (
             <TodayView
               events={events}
               weekEvents={weekEvents}
@@ -103,6 +118,8 @@ export default function App() {
               onResetDay={resetDay}
               loading={cal.loading}
               error={cal.error}
+              auth={auth}
+              onAddLocal={local.addEvent}
             />
           )}
           {view === 'projects' && (

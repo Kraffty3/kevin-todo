@@ -1,11 +1,12 @@
 // Today view — vertical timeline + right queue, with Day / 3-day toggle.
 import React from 'react';
-import { SRC_META, INBOX } from '../data.js';
+import { SRC_META } from '../data.js';
 import {
   SourceBadge, EventCard, HourLines, NowLine,
-  QuickAdd, StaleStrip, SectionLabel,
+  SectionLabel,
   ImportantStar, CascadePips, fmtHour, fmtRange,
 } from '../components/Shared.jsx';
+import { QuickAddInput } from '../components/QuickAddInput.jsx';
 
 const DAY_HPHR = 64;
 const WK_HPHR = 40;
@@ -16,7 +17,7 @@ function fmtClock(d) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now, days, dateHeader, dayOffset, onShiftDay, onResetDay, loading, error }) {
+export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now, days, dateHeader, dayOffset, onShiftDay, onResetDay, loading, error, auth, onAddLocal }) {
   return (
     <div style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, borderRight: '1px solid var(--hair)' }}>
@@ -29,13 +30,8 @@ export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now
           loading={loading}
           error={error}
         />
-        <div style={{ padding: '12px 22px', display: 'flex', gap: 12, alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
-          <QuickAdd />
-          <div style={{ display: 'flex', gap: 6 }}>
-            {Object.keys(SRC_META).filter(k => k !== 'manual').map(k => (
-              <SourceBadge key={k} src={k} />
-            ))}
-          </div>
+        <div style={{ padding: '12px 22px', display: 'flex', gap: 12, alignItems: 'flex-start', borderBottom: '1px solid var(--hair)' }}>
+          <QuickAddInput auth={auth} onAddLocal={onAddLocal} />
         </div>
 
         <div className="scroll" style={{ flex: 1, position: 'relative', minHeight: 0 }}>
@@ -43,8 +39,6 @@ export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now
             ? <DayBody events={events} now={now} onSelectEvent={onSelectEvent} />
             : <WeekBody week={weekEvents} now={now} days={days} onSelectEvent={onSelectEvent} />}
         </div>
-
-        <StaleStrip />
       </div>
 
       <RightQueue events={events} now={now} onSelectEvent={onSelectEvent} />
@@ -268,22 +262,6 @@ function RightQueue({ events, now, onSelectEvent }) {
           )}
           {important.map((e) => (
             <QueueItem key={e.id} event={e} now={now} onClick={() => onSelectEvent && onSelectEvent(e.id)} />
-          ))}
-        </div>
-      </div>
-
-      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--hair)' }}>
-        <SectionLabel>Inbox · unscheduled</SectionLabel>
-        <div style={{ marginTop: 8 }}>
-          {INBOX.map((it) => (
-            <div key={it.id} style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0',
-              borderBottom: '1px dashed var(--hair)',
-            }}>
-              <SourceBadge src={it.src} dotOnly />
-              <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink-2)' }}>{it.title}</span>
-              <button className="btn sm ghost" style={{ padding: '2px 6px', color: 'var(--mute)' }}>↗</button>
-            </div>
           ))}
         </div>
       </div>

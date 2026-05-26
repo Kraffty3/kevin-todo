@@ -6,7 +6,7 @@
 import React from 'react';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-const SCOPE = 'openid email https://www.googleapis.com/auth/calendar.readonly';
+const SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events';
 const TOKEN_KEY = 'kevin-todo:gtoken';
 const STATE_KEY = 'kevin-todo:oauth-state';
 const USER_KEY = 'kevin-todo:user';
