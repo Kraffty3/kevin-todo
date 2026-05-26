@@ -203,7 +203,7 @@ function TopBar({ nextUp, now, auth, onOpenConnections, onSelectEvent }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <BrandMark />
-        <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: -0.2 }}>todo</span>
+        <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: -0.2 }}>Done</span>
         {auth.user?.email && (
           <span className="mono" style={{ fontSize: 10.5, color: 'var(--faint)', marginLeft: 4 }}>
             · {auth.user.email}
