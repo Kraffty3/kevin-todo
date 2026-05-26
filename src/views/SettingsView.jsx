@@ -4,6 +4,7 @@ import React from 'react';
 import { INTEGRATIONS } from '../data.js';
 import { ToggleSwitch } from '../components/Shared.jsx';
 import { IntegrationCard } from '../components/ConnectionsPanel.jsx';
+import { fireTestNotification, getNotificationPermission, requestNotificationPermission } from '../lib/timers.js';
 
 export function SettingsView({ defaults, onDefaults, auth }) {
   const [addVal, setAddVal] = React.useState('');
@@ -115,24 +116,9 @@ export function SettingsView({ defaults, onDefaults, auth }) {
 
       <SettingsSection
         title="Delivery"
-        sub="How alerts surface while the app is open."
+        sub="Notifications fire while this tab is open. Closed-tab delivery would need a service worker — out of scope for now."
       >
-        <SettingsRow label="In-app notification">
-          <ToggleSwitch defaultChecked />
-        </SettingsRow>
-        <SettingsRow label="Audio chime">
-          <ToggleSwitch defaultChecked />
-        </SettingsRow>
-        <SettingsRow label="Snooze duration">
-          <select defaultValue="5" style={selectStyle()}>
-            <option value="2">2 min</option>
-            <option value="5">5 min</option>
-            <option value="10">10 min</option>
-          </select>
-        </SettingsRow>
-        <div className="mono" style={{ fontSize: 10.5, color: 'var(--mute)', marginTop: 8, lineHeight: 1.6 }}>
-          Native delivery when the tab is closed is out of scope for this artifact.
-        </div>
+        <NotificationControls />
       </SettingsSection>
 
       <SettingsSection
@@ -147,6 +133,49 @@ export function SettingsView({ defaults, onDefaults, auth }) {
       </SettingsSection>
 
       <div style={{ height: 40 }} />
+    </div>
+  );
+}
+
+function NotificationControls() {
+  const [permission, setPermission] = React.useState(getNotificationPermission());
+
+  const request = async () => {
+    const result = await requestNotificationPermission();
+    setPermission(result);
+  };
+
+  const labelByState = {
+    granted: 'Enabled',
+    denied: 'Blocked in browser settings',
+    default: 'Not enabled yet',
+    unsupported: 'Not supported by this browser',
+  };
+  const colorByState = {
+    granted: 'var(--success)',
+    denied: 'var(--conflict)',
+    default: 'var(--mute)',
+    unsupported: 'var(--faint)',
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <SettingsRow label="Browser notifications">
+        <span className="mono" style={{ fontSize: 12, color: colorByState[permission], fontWeight: 600 }}>
+          {labelByState[permission]}
+        </span>
+        {permission === 'default' && (
+          <button className="btn sm primary" onClick={request}>Enable</button>
+        )}
+        {permission === 'granted' && (
+          <button className="btn sm" onClick={fireTestNotification}>Send test notification</button>
+        )}
+      </SettingsRow>
+      {permission === 'denied' && (
+        <div className="mono" style={{ fontSize: 10.5, color: 'var(--mute)', lineHeight: 1.5 }}>
+          You blocked notifications. Re-enable in your browser's site settings for this domain.
+        </div>
+      )}
     </div>
   );
 }

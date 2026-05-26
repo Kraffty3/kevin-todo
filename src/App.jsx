@@ -10,6 +10,7 @@ import { ConnectionsPanel } from './components/ConnectionsPanel.jsx';
 import { useAuth } from './lib/auth.js';
 import { useGoogleCalendar, buildDateLabels } from './lib/calendar.js';
 import { useLocalEvents } from './lib/quickAdd.js';
+import { useTickRunner } from './lib/timers.js';
 
 const DEFAULT_ACCENT = '#c0772c';
 
@@ -76,6 +77,19 @@ export default function App() {
     .filter((e) => e.important && e.start.getTime() > now.getTime())
     .sort((a, b) => a.start - b.start)[0];
 
+  // Tick runner watches important events across the visible day and the
+  // local-event store, fires notifications when each cascade tick crosses.
+  const importantEvents = React.useMemo(() => {
+    const all = [...cal.today, ...local.events];
+    return all.filter((e) => e.important);
+  }, [cal.today, local.events]);
+
+  const timer = useTickRunner(
+    importantEvents,
+    cascadeDefaults.values,
+    setSelectedEventId,
+  );
+
   const selectedEvent = selectedEventId
     ? [...events, ...Object.values(weekEvents).flat()].find((e) => e.id === selectedEventId)
     : null;
@@ -120,6 +134,7 @@ export default function App() {
               error={cal.error}
               auth={auth}
               onAddLocal={local.addEvent}
+              timer={timer}
             />
           )}
           {view === 'projects' && (
@@ -140,6 +155,7 @@ export default function App() {
           event={selectedEvent}
           defaults={cascadeDefaults}
           now={now}
+          timer={timer}
           onClose={() => setSelectedEventId(null)}
         />
       )}

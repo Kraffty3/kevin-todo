@@ -17,10 +17,11 @@ function fmtClock(d) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now, days, dateHeader, dayOffset, onShiftDay, onResetDay, loading, error, auth, onAddLocal }) {
+export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now, days, dateHeader, dayOffset, onShiftDay, onResetDay, loading, error, auth, onAddLocal, timer }) {
   return (
     <div style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, borderRight: '1px solid var(--hair)' }}>
+        <NotificationBanner timer={timer} />
         <TodaySubHeader
           view={view} onView={onView}
           dateHeader={dateHeader}
@@ -42,6 +43,48 @@ export function TodayView({ events, weekEvents, view, onView, onSelectEvent, now
       </div>
 
       <RightQueue events={events} now={now} onSelectEvent={onSelectEvent} />
+    </div>
+  );
+}
+
+function NotificationBanner({ timer }) {
+  const [dismissed, setDismissed] = React.useState(() => {
+    return localStorage.getItem('kevin-todo:notif-banner-dismissed') === '1';
+  });
+
+  if (!timer) return null;
+  if (timer.permission === 'granted') return null;
+  if (timer.permission === 'unsupported') return null;
+  if (dismissed && timer.permission === 'default') return null;
+
+  const denied = timer.permission === 'denied';
+  const dismiss = () => {
+    localStorage.setItem('kevin-todo:notif-banner-dismissed', '1');
+    setDismissed(true);
+  };
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '8px 22px',
+      background: denied ? 'var(--conflict-bg)' : 'var(--accent-bg)',
+      borderBottom: `1px solid ${denied ? 'var(--conflict)' : 'var(--accent)'}`,
+      fontSize: 12,
+    }}>
+      <span style={{ color: denied ? 'var(--conflict)' : 'var(--accent)', fontWeight: 600 }}>
+        {denied ? '⚠' : '🔔'}
+      </span>
+      <span style={{ flex: 1, color: 'var(--ink-2)' }}>
+        {denied
+          ? 'Notifications were blocked. Enable them in your browser settings to get cascade reminders.'
+          : 'Enable notifications to get pinged before important events (T−30, T−15, T−10, T−5, T−2).'}
+      </span>
+      {!denied && (
+        <button className="btn sm primary" onClick={() => timer.requestPermission()}>
+          Enable notifications
+        </button>
+      )}
+      <button className="btn sm ghost" onClick={dismiss} style={{ padding: '4px 8px' }}>✕</button>
     </div>
   );
 }

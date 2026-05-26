@@ -1,76 +1,67 @@
 // Event timer panel — slides in when an event is clicked from the timeline.
-// Auto-generates: cascade leading up to start (T-30, T-15, T-10, T-5, T-2)
-// + during-event sub-timers (every 15m through duration + a last-5-min warning + end).
+// Real-time countdown, cascade pre-ticks, sub-timers during the event, wired
+// Restart and Snooze.
 import React from 'react';
 import { SRC_META } from '../data.js';
 import {
   SourceBadge, ImportantStar, SmallTag, SectionLabel, fmtRange,
 } from './Shared.jsx';
+import { buildTicks } from '../lib/timers.js';
 
-function buildPreCascade(values, eventStart) {
-  return values.slice().sort((a, b) => b - a).map((m) => ({
-    at: new Date(eventStart.getTime() - m * 60000),
-    mins: m,
-    label: `T−${m}m`,
-    kind: 'pre',
-  }));
+function pad2(n) {
+  return String(n).padStart(2, '0');
 }
 
-function buildSubTimers(eventStart, eventEnd) {
-  const durationMins = Math.round((eventEnd.getTime() - eventStart.getTime()) / 60000);
-  const ticks = [];
-  for (let m = 15; m < durationMins; m += 15) {
-    ticks.push({ at: new Date(eventStart.getTime() + m * 60000), mins: m, label: `${m}m in`, kind: 'mid' });
-  }
-  if (durationMins > 10) {
-    const last5 = durationMins - 5;
-    if (!ticks.find((t) => t.mins === last5)) {
-      ticks.push({ at: new Date(eventStart.getTime() + last5 * 60000), mins: last5, label: 'last 5 min', kind: 'last5' });
-    }
-  }
-  ticks.push({ at: eventEnd, mins: durationMins, label: 'end', kind: 'end' });
-  return ticks.sort((a, b) => a.at - b.at);
-}
-
-function tickKey(t) {
-  return `${t.kind}-${t.at.getTime()}`;
-}
-
-export function EventTimerPanel({ event, defaults, now, onClose }) {
-  const [checkedExtra, setCheckedExtra] = React.useState({});
+export function EventTimerPanel({ event, defaults, now, timer, onClose }) {
+  // Re-render every second so the countdown ticks live.
+  const [, setSecondTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setSecondTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   if (!event) return null;
 
+  // Use live now for the displayed countdown so seconds update each tick.
+  const liveNow = new Date();
   const m = SRC_META[event.src];
-  const durationMins = Math.round((event.end.getTime() - event.start.getTime()) / 60000);
-  const minsUntil = Math.round((event.start.getTime() - now.getTime()) / 60000);
-  const minsLeft = Math.round((event.end.getTime() - now.getTime()) / 60000);
-  const past = event.end.getTime() < now.getTime();
-  const inProgress = !past && event.start.getTime() <= now.getTime();
+  const durationMins = Math.round((event.end.getTime() - event.start.getTime()) / 60_000);
+  const secsUntilStart = Math.round((event.start.getTime() - liveNow.getTime()) / 1000);
+  const secsUntilEnd = Math.round((event.end.getTime() - liveNow.getTime()) / 1000);
+  const past = secsUntilEnd < 0;
+  const inProgress = !past && secsUntilStart <= 0;
 
-  const preCascade = buildPreCascade(defaults.values, event.start);
-  const subs = buildSubTimers(event.start, event.end);
+  const isSnoozed = timer?.snoozed?.[event.id] && timer.snoozed[event.id] > liveNow.getTime();
+
+  // Build all ticks
+  const allTicks = React.useMemo(
+    () => buildTicks(event, defaults.values),
+    [event.id, event.start, event.end, defaults.values.join(',')]
+  );
+  const preCascade = allTicks.filter((t) => t.kind === 'pre').sort((a, b) => b.mins - a.mins);
+  const subs = allTicks.filter((t) => t.kind !== 'pre');
 
   const tickDone = (t) => {
-    if (checkedExtra[tickKey(t)] !== undefined) return checkedExtra[tickKey(t)];
-    return t.at.getTime() <= now.getTime();
+    if (timer?.fired?.has(t.id)) return true;
+    return t.at.getTime() <= liveNow.getTime();
   };
 
-  const toggleTick = (t) => {
-    const key = tickKey(t);
-    setCheckedExtra((s) => ({ ...s, [key]: !tickDone(t) }));
-  };
-
-  const countSecs = 14;
-  let countMins, countLabel, countColor;
+  // Big countdown
+  let countSecs, countLabel, countColor;
   if (past) {
-    countMins = 0; countLabel = 'Completed'; countColor = 'var(--mute)';
+    countSecs = 0; countLabel = 'Completed'; countColor = 'var(--mute)';
   } else if (inProgress) {
-    countMins = minsLeft; countLabel = 'Ends in'; countColor = 'var(--success)';
+    countSecs = Math.max(0, secsUntilEnd); countLabel = 'Ends in'; countColor = 'var(--success)';
   } else {
-    countMins = minsUntil; countLabel = 'Starts in'; countColor = 'var(--accent)';
+    countSecs = Math.max(0, secsUntilStart); countLabel = 'Starts in'; countColor = 'var(--accent)';
   }
-  const display = `${String(Math.floor(Math.max(countMins, 0) / 60)).padStart(2, '0')}:${String(Math.max(countMins, 0) % 60).padStart(2, '0')}:${String(countSecs).padStart(2, '0')}`;
+  const hours = Math.floor(countSecs / 3600);
+  const mins = Math.floor((countSecs % 3600) / 60);
+  const secs = countSecs % 60;
+  const display = `${pad2(hours)}:${pad2(mins)}:${pad2(secs)}`;
+
+  const onSnooze = () => timer?.snooze && timer.snooze(event.id, 5);
+  const onRestart = () => timer?.restart && timer.restart(event.id);
 
   return (
     <>
@@ -115,6 +106,7 @@ export function EventTimerPanel({ event, defaults, now, onClose }) {
             {event.protectedBlock && <SmallTag>protected</SmallTag>}
             {inProgress && <SmallTag>in progress</SmallTag>}
             {past && <SmallTag>past</SmallTag>}
+            {isSnoozed && <SmallTag danger>snoozed</SmallTag>}
           </div>
           <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.3, marginTop: 8 }}>{event.title}</div>
           <div className="mono" style={{ fontSize: 11, color: 'var(--mute)', marginTop: 6 }}>
@@ -133,11 +125,16 @@ export function EventTimerPanel({ event, defaults, now, onClose }) {
             <div className="mono" style={{ fontSize: 40, fontWeight: 600, color: countColor, lineHeight: 1, marginTop: 6, letterSpacing: -1 }}>
               {display}
             </div>
+            {isSnoozed && (
+              <div className="mono" style={{ fontSize: 10, color: 'var(--conflict)', marginTop: 8 }}>
+                notifications muted for {Math.ceil((timer.snoozed[event.id] - liveNow.getTime()) / 60_000)}m
+              </div>
+            )}
           </div>
           {!past && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn">Snooze 5</button>
-              <button className="btn accent">↻ Restart timer</button>
+              <button className="btn" onClick={onSnooze} disabled={!timer}>Snooze 5</button>
+              <button className="btn accent" onClick={onRestart} disabled={!timer}>↻ Restart</button>
             </div>
           )}
         </div>
@@ -148,12 +145,7 @@ export function EventTimerPanel({ event, defaults, now, onClose }) {
           </SectionLabel>
           <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {preCascade.map((t) => (
-              <TickRow key={tickKey(t)}
-                tick={t}
-                done={tickDone(t)}
-                onToggle={() => toggleTick(t)}
-                contextNow={now}
-              />
+              <TickRow key={t.id} tick={t} done={tickDone(t)} contextNow={liveNow} />
             ))}
           </div>
 
@@ -168,12 +160,7 @@ export function EventTimerPanel({ event, defaults, now, onClose }) {
           </div>
           <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {subs.map((t) => (
-              <TickRow key={tickKey(t)}
-                tick={t}
-                done={tickDone(t)}
-                onToggle={() => toggleTick(t)}
-                contextNow={now}
-              />
+              <TickRow key={t.id} tick={t} done={tickDone(t)} contextNow={liveNow} />
             ))}
           </div>
         </div>
@@ -184,19 +171,20 @@ export function EventTimerPanel({ event, defaults, now, onClose }) {
           display: 'flex', alignItems: 'center', gap: 10,
         }}>
           <span className="mono" style={{ fontSize: 10, color: 'var(--mute)' }}>
-            ticks auto-fire as time passes · tap to mark manually
+            {timer?.permission === 'granted'
+              ? 'browser notifications on · keep this tab open'
+              : 'enable notifications to get pinged'}
           </span>
           <div style={{ flex: 1 }} />
-          <button className="btn sm">Customize…</button>
         </div>
       </div>
     </>
   );
 }
 
-function TickRow({ tick, done, onToggle, contextNow }) {
+function TickRow({ tick, done, contextNow }) {
   const past = tick.at.getTime() <= contextNow.getTime();
-  const minsRel = Math.round((tick.at.getTime() - contextNow.getTime()) / 60000);
+  const minsRel = Math.round((tick.at.getTime() - contextNow.getTime()) / 60_000);
   const kindStyles = {
     pre:   { bg: 'var(--accent-bg)',  fg: 'var(--accent)',  bd: 'var(--accent)'  },
     mid:   { bg: 'var(--google-bg)',  fg: 'var(--google)',  bd: 'var(--google)'  },
@@ -210,13 +198,12 @@ function TickRow({ tick, done, onToggle, contextNow }) {
   else timeNote = `in ${formatRel(minsRel)}`;
 
   return (
-    <label style={{
+    <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
       padding: '10px 14px',
       background: 'var(--panel)',
       border: '1px solid var(--hair)',
       borderRadius: 8,
-      cursor: 'pointer',
       opacity: done ? 0.78 : 1,
     }}>
       <span style={{
@@ -232,7 +219,6 @@ function TickRow({ tick, done, onToggle, contextNow }) {
           </svg>
         )}
       </span>
-      <input type="checkbox" checked={done} onChange={onToggle} style={{ display: 'none' }} />
       <span className="mono" style={{
         fontSize: 11, fontWeight: 500,
         color: s.fg,
@@ -258,7 +244,7 @@ function TickRow({ tick, done, onToggle, contextNow }) {
       <span className="mono" style={{ fontSize: 9.5, color: 'var(--faint)', minWidth: 64, textAlign: 'right', flexShrink: 0 }}>
         {timeNote}
       </span>
-    </label>
+    </div>
   );
 }
 
